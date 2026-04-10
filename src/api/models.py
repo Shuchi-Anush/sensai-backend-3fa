@@ -799,3 +799,48 @@ class UpdateIntegrationRequest(BaseModel):
     access_token: str | None = None
     refresh_token: str | None = None
     expires_at: datetime | None = None
+
+
+# MMEE (Multi-Modal Evaluation Engine) Models
+
+
+class EvaluationInputType(str, Enum):
+    CODE = "code"
+    TEXT = "text"
+    PROBLEM_SOLVING = "problem_solving"
+
+    def __str__(self):
+        return self.value
+
+    def __eq__(self, other):
+        if isinstance(other, str):
+            return self.value == other
+        elif isinstance(other, EvaluationInputType):
+            return self.value == other.value
+        return False
+
+
+class EvaluationRequest(BaseModel):
+    input_data: str
+
+
+class EvaluationScores(BaseModel):
+    auto: float
+    ai: float
+    human: float
+
+
+class EvaluationWeights(BaseModel):
+    auto: float
+    ai: float
+    human: float
+
+
+class EvaluationResponse(BaseModel):
+    input_type: str
+    scores: EvaluationScores
+    weights: EvaluationWeights
+    conflict: float
+    final_score: float
+    confidence: float
+    explanation: List[str]

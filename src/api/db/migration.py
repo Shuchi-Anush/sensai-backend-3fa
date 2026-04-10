@@ -231,5 +231,19 @@ async def cleanup_invalid_chat_history():
         await conn.commit()
 
 
+async def create_evaluations_table_migration():
+    """
+    Migration: Creates the evaluations table if it doesn't exist.
+    """
+    async with get_new_db_connection() as conn:
+        cursor = await conn.cursor()
+        from api.db import create_evaluations_table
+
+        await create_evaluations_table(cursor)
+
+        await conn.commit()
+
+
 async def run_migrations():
     await cleanup_invalid_chat_history()
+    await create_evaluations_table_migration()

@@ -32,6 +32,7 @@ from api.config import (
     integrations_table_name,
     assignment_table_name,
     bq_sync_table_name,
+    evaluations_table_name,
 )
 from api.db.migration import run_migrations
 
@@ -710,6 +711,8 @@ async def init_db():
 
             await create_bq_sync_table(cursor)
 
+            await create_evaluations_table(cursor)
+
             await conn.commit()
 
         except Exception as exception:
@@ -817,3 +820,33 @@ async def mark_all_course_generation_jobs_as_failed():
         )
 
         await conn.commit()
+
+
+async def create_evaluations_table(cursor):
+    await cursor.execute(
+        f"""CREATE TABLE IF NOT EXISTS {evaluations_table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                input_type TEXT NOT NULL,
+                input_data TEXT NOT NULL,
+                auto_score REAL NOT NULL,
+                ai_score REAL NOT NULL,
+                human_score REAL NOT NULL,
+                auto_weight REAL NOT NULL,
+                ai_weight REAL NOT NULL,
+                human_weight REAL NOT NULL,
+                conflict REAL NOT NULL,
+                final_score REAL NOT NULL,
+                confidence REAL NOT NULL,
+                explanation TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deleted_at DATETIME
+            )"""
+    )
+
+    await cursor.execute(
+        f"""CREATE INDEX IF NOT EXISTS idx_evaluation_input_type ON {evaluations_table_name} (input_type)"""
+    )
+
+    await cursor.execute(
+        f"""CREATE INDEX IF NOT EXISTS idx_evaluation_created_at ON {evaluations_table_name} (created_at)"""
+    )
