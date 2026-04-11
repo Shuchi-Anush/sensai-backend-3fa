@@ -33,6 +33,8 @@ from api.config import (
     assignment_table_name,
     bq_sync_table_name,
     evaluations_table_name,
+    code_test_cases_table_name,
+    code_evaluations_table_name,
 )
 from api.db.migration import run_migrations
 
@@ -712,6 +714,10 @@ async def init_db():
             await create_bq_sync_table(cursor)
 
             await create_evaluations_table(cursor)
+            
+            await create_code_test_cases_table(cursor)
+            
+            await create_code_evaluations_table(cursor)
 
             await conn.commit()
 
@@ -838,6 +844,7 @@ async def create_evaluations_table(cursor):
                 final_score REAL NOT NULL,
                 confidence REAL NOT NULL,
                 explanation TEXT NOT NULL,
+                feedback TEXT,
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 deleted_at DATETIME
             )"""
@@ -849,4 +856,41 @@ async def create_evaluations_table(cursor):
 
     await cursor.execute(
         f"""CREATE INDEX IF NOT EXISTS idx_evaluation_created_at ON {evaluations_table_name} (created_at)"""
+    )
+
+
+async def create_code_test_cases_table(cursor):
+    await cursor.execute(
+        f"""CREATE TABLE IF NOT EXISTS {code_test_cases_table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                question_id INTEGER NOT NULL,
+                input TEXT NOT NULL,
+                expected_output TEXT NOT NULL,
+                is_hidden BOOLEAN DEFAULT 0,
+                position INTEGER DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deleted_at DATETIME,
+                FOREIGN KEY (question_id) REFERENCES {questions_table_name}(id) ON DELETE CASCADE
+            )"""
+    )
+
+
+async def create_code_evaluations_table(cursor):
+    await cursor.execute(
+        f"""CREATE TABLE IF NOT EXISTS {code_evaluations_table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                question_id INTEGER,
+                language TEXT NOT NULL,
+                source_code TEXT NOT NULL,
+                score INTEGER NOT NULL,
+                passed_testcases INTEGER NOT NULL,
+                total_testcases INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                errors TEXT,
+                results TEXT,
+                execution_time_ms REAL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                deleted_at DATETIME
+            )"""
     )

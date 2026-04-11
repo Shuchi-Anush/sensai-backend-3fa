@@ -10,6 +10,11 @@ from api.models import (
     EvaluationResponse,
     EvaluationScores,
     EvaluationWeights,
+    EvaluationFeedback,
+    EvaluatorFeedback,
+    CodeEvaluationRequest,
+    CodeEvaluationResponse,
+    CodeTestCaseResult,
 )
 from api.llm import run_llm_with_openai
 from api.prompts import compile_prompt
@@ -24,6 +29,10 @@ from api.prompts.evaluation import (
     HUMAN_SCORE_USER_PROMPT,
 )
 from api.db.evaluation import create_evaluation, get_evaluations, get_evaluation_by_id
+from api.db.code_evaluation import create_code_evaluation, get_test_cases_for_question
+from api.db.code_draft import get_user_code_draft
+from api.engines.test_executor import execute_test_cases
+from api.engines.scoring_engine import compute_score
 from api.utils.logging import logger
 
 router = APIRouter()
@@ -42,6 +51,12 @@ class ClassificationOutput(BaseModel):
 class ScoreOutput(BaseModel):
     reasoning: str = Field(description="Brief reasoning for the score")
     score: float = Field(description="Score between 0.0 and 1.0")
+    issues: list[str] = Field(
+        description="List of specific issues, bugs, or suggestions found. Empty list if none."
+    )
+    verdict: str = Field(
+        description="One-line summary verdict of the evaluation"
+    )
 
 
 class FeaturesOutput(BaseModel):
@@ -74,7 +89,6 @@ async def step1_classify_input(input_data: str) -> str:
     # Normalize to valid values
     valid_types = {"code", "text", "problem_solving"}
     if input_type not in valid_types:
-        # Fuzzy match
         if "code" in input_type:
             input_type = "code"
         elif "problem" in input_type or "solving" in input_type:
@@ -98,7 +112,13 @@ async def step2_extract_features(input_data: str, input_type: str) -> str:
             "- Potential bugs or syntax errors\n"
             "- Code structure (functions, classes, etc.)\n"
             "- Edge case handling\n"
-            "- Time/space complexity estimate"
+            "- Time/space complexity estimate\n\n"
+        
+            "Scoring Rule:\n"
+            "- If any syntax error is present, the code cannot execute.\n"
+            "- In such cases, assign a score very close to zero but not exactly zero.\n"
+            "- The score should reflect minimal credit for intent/structure if detectable.\n"
+            "- If no syntax errors are present, evaluate normally based on logic, structure, and efficiency."
         )
     elif input_type == "problem_solving":
         feature_prompt = (
@@ -139,8 +159,8 @@ async def step2_extract_features(input_data: str, input_type: str) -> str:
 
 async def step3_score(
     input_data: str, input_type: str, features: str
-) -> tuple[float, float, float]:
-    """Step 3: Run three evaluators in parallel."""
+) -> tuple[float, float, float, dict]:
+    """Step 3: Run three evaluators in parallel. Returns scores + feedback."""
     model = openai_plan_to_model_name["text"]
 
     # Build messages for each evaluator
@@ -195,8 +215,28 @@ async def step3_score(
     ai = max(0.0, min(1.0, ai_result.score))
     h = max(0.0, min(1.0, human_result.score))
 
+    # Collect feedback from each evaluator
+    feedback = {
+        "auto": {
+            "verdict": auto_result.verdict,
+            "issues": auto_result.issues,
+        },
+        "ai": {
+            "verdict": ai_result.verdict,
+            "issues": ai_result.issues,
+        },
+        "human": {
+            "verdict": human_result.verdict,
+            "issues": human_result.issues,
+        },
+    }
+
     logger.info(f"MMEE Step 3 — Scores: auto={a:.2f}, ai={ai:.2f}, human={h:.2f}")
-    return a, ai, h
+    logger.info(
+        f"MMEE Step 3 — Issues: auto={len(auto_result.issues)}, "
+        f"ai={len(ai_result.issues)}, human={len(human_result.issues)}"
+    )
+    return a, ai, h, feedback
 
 
 def step4_conflict(a: float, ai: float, h: float) -> float:
@@ -320,9 +360,11 @@ async def evaluate_input(request: EvaluationRequest):
         features = await step2_extract_features(input_data, input_type)
         yield json.dumps({"step": 2, "result": "done"}) + "\n"
 
-        # Step 3: Score (three parallel evaluators)
+        # Step 3: Score (three parallel evaluators) — now returns feedback
         yield json.dumps({"step": 3, "status": "scoring"}) + "\n"
-        a, ai_score, h = await step3_score(input_data, input_type, features)
+        a, ai_score, h, feedback = await step3_score(
+            input_data, input_type, features
+        )
         yield json.dumps(
             {"step": 3, "result": {"auto": a, "ai": ai_score, "human": h}}
         ) + "\n"
@@ -337,6 +379,13 @@ async def evaluate_input(request: EvaluationRequest):
             input_type, a, ai_score, h, conflict, w_a, w_ai, w_h, final_score
         )
 
+        # Build feedback objects
+        eval_feedback = EvaluationFeedback(
+            auto=EvaluatorFeedback(**feedback["auto"]),
+            ai=EvaluatorFeedback(**feedback["ai"]),
+            human=EvaluatorFeedback(**feedback["human"]),
+        )
+
         # Step 8: Build final response
         result = EvaluationResponse(
             input_type=input_type,
@@ -346,6 +395,7 @@ async def evaluate_input(request: EvaluationRequest):
             final_score=final_score,
             confidence=confidence,
             explanation=explanation,
+            feedback=eval_feedback,
         )
 
         # Store in database
@@ -363,6 +413,7 @@ async def evaluate_input(request: EvaluationRequest):
                 final_score=final_score,
                 confidence=confidence,
                 explanation=explanation,
+                feedback=feedback,
             )
         except Exception as e:
             logger.error(f"Failed to store evaluation: {e}")
@@ -392,3 +443,98 @@ async def get_single_evaluation(evaluation_id: int):
     if not result:
         raise HTTPException(status_code=404, detail="Evaluation not found")
     return result
+
+
+# ---------- Code Evaluation Endpoints ----------
+
+@router.post("/code", response_model=CodeEvaluationResponse)
+async def evaluate_code(request: CodeEvaluationRequest):
+    """
+    Evaluate Python code against test cases.
+    Optionally fetches from a saved draft if source_code is not provided.
+    """
+    source_code = request.source_code
+    
+    # 1. Fetch code from draft if not provided
+    if not source_code:
+        if not request.user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Either source_code or user_id must be provided"
+            )
+        draft = await get_user_code_draft(request.user_id, request.question_id)
+        if not draft or not draft.get("code"):
+            raise HTTPException(status_code=404, detail="Saved draft not found")
+            
+        # Find the requested language code
+        lang_code = next(
+            (item for item in draft["code"] if item["language"] == request.language),
+            None
+        )
+        if not lang_code:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No draft found for language: {request.language}"
+            )
+        source_code = lang_code["value"]
+
+    # 2. Fetch test cases for the question
+    test_cases = await get_test_cases_for_question(request.question_id)
+    if not test_cases:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No test cases found for question {request.question_id}"
+        )
+
+    # 3. Execute code against test cases
+    results = await execute_test_cases(source_code, request.language, test_cases)
+
+    # 4. Compute strict score
+    scoring_result = compute_score(results)
+
+    # 5. Format total execution time
+    total_time_ms = sum(r.execution_time_ms for r in results)
+    formatted_time = f"{total_time_ms:.2f}ms"
+
+    # 6. Save evaluation to history
+    response_results = [
+        CodeTestCaseResult(
+            test_case_id=r.test_case_id,
+            input=r.input,
+            expected_output=r.expected_output,
+            actual_output=r.actual_output,
+            passed=r.passed,
+            status=r.status,
+            error=r.error,
+            execution_time_ms=r.execution_time_ms,
+        ) 
+        for r in results
+    ]
+
+    eval_id = await create_code_evaluation(
+        user_id=request.user_id,
+        question_id=request.question_id,
+        language=request.language,
+        source_code=source_code,
+        score=scoring_result.score,
+        passed_testcases=scoring_result.passed_testcases,
+        total_testcases=scoring_result.total_testcases,
+        status=scoring_result.status,
+        errors=scoring_result.errors,
+        results=[r.model_dump() for r in response_results],
+        execution_time_ms=total_time_ms,
+    )
+
+    from datetime import datetime, timezone
+    
+    return CodeEvaluationResponse(
+        evaluation_id=eval_id,
+        score=scoring_result.score,
+        passed_testcases=scoring_result.passed_testcases,
+        total_testcases=scoring_result.total_testcases,
+        status=scoring_result.status,
+        errors=scoring_result.errors,
+        results=response_results,
+        execution_time=formatted_time,
+        submitted_at=datetime.now(timezone.utc).isoformat()
+    )

@@ -36,9 +36,13 @@ For PROBLEM SOLVING:
 - 1.0 = flawless reasoning with correct final answer
 - 0.0 = completely wrong reasoning and answer
 
-Be strict and objective. Do not consider style, readability, or presentation — only correctness."""
+Be strict and objective. Do not consider style, readability, or presentation — only correctness.
 
-AUTO_SCORE_USER_PROMPT = """Evaluate the following {{input_type}} input for objective correctness. Return a score between 0.0 and 1.0.
+IMPORTANT — You MUST also provide:
+1. A list of specific issues/bugs/errors found. For code: point out the exact line or expression that is wrong and what the fix should be. For text: point out factual errors. For problem-solving: point out logical errors in specific steps. If there are no issues, return an empty list.
+2. A short one-line summary of the overall correctness verdict."""
+
+AUTO_SCORE_USER_PROMPT = """Evaluate the following {{input_type}} input for objective correctness. Return a score between 0.0 and 1.0, plus a list of specific issues found.
 
 Input:
 {{input_data}}
@@ -74,9 +78,13 @@ For PROBLEM SOLVING:
 - 1.0 = masterful problem decomposition with clear methodology
 - 0.0 = no coherent reasoning approach
 
-Focus on the QUALITY of thinking, not surface-level correctness."""
+Focus on the QUALITY of thinking, not surface-level correctness.
 
-AI_SCORE_USER_PROMPT = """Evaluate the following {{input_type}} input for semantic depth and reasoning quality. Return a score between 0.0 and 1.0.
+IMPORTANT — You MUST also provide:
+1. A list of specific suggestions for improving depth/quality. Be concise — one short sentence per suggestion. If the input is excellent, return an empty list.
+2. A short one-line summary of the depth/quality verdict."""
+
+AI_SCORE_USER_PROMPT = """Evaluate the following {{input_type}} input for semantic depth and reasoning quality. Return a score between 0.0 and 1.0, plus specific suggestions.
 
 Input:
 {{input_data}}
@@ -84,7 +92,7 @@ Input:
 Extracted features to consider:
 {{features}}"""
 
-HUMAN_SCORE_SYSTEM_PROMPT = """You are simulating a human evaluator. You assess inputs the way an experienced human reviewer would, focusing on practical usefulness, readability, and overall impression.
+HUMAN_SCORE_SYSTEM_PROMPT = """You are a constrained LLM that is restricted to think and speak exactly like a human reviewer. You assess inputs focusing on practical usefulness, readability, and overall impression. You MUST give suggestions sounding exactly like a human (e.g., using "I think", "I noticed that", or "It would be easier for me if..."). Do NOT use formal AI-speak. Use conversational, empathetic, and constructive language.
 
 Scoring guidelines (score from 0.0 to 1.0):
 
@@ -118,9 +126,13 @@ IMPORTANT: Be harsher on:
 - Messy structure
 - Poor readability
 - Unclear explanations
-- Lack of practical usefulness"""
+- Lack of practical usefulness
 
-HUMAN_SCORE_USER_PROMPT = """Evaluate the following {{input_type}} input as a human reviewer would, focusing on readability, structure, clarity, and practical usefulness. Return a score between 0.0 and 1.0.
+IMPORTANT — You MUST also provide:
+1. A list of specific readability/style issues found, spoken with a human voice (e.g. "I found it a bit hard to follow..."). Be concise — one short sentence per issue. If the input is clean, return an empty list.
+2. A short one-line summary of the readability/style verdict, also in a human tone."""
+
+HUMAN_SCORE_USER_PROMPT = """Evaluate the following {{input_type}} input as a human reviewer would, focusing on readability, structure, clarity, and practical usefulness. Return a score between 0.0 and 1.0, plus specific issues.
 
 Input:
 {{input_data}}

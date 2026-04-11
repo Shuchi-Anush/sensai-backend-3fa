@@ -836,6 +836,17 @@ class EvaluationWeights(BaseModel):
     human: float
 
 
+class EvaluatorFeedback(BaseModel):
+    verdict: str
+    issues: List[str]
+
+
+class EvaluationFeedback(BaseModel):
+    auto: EvaluatorFeedback
+    ai: EvaluatorFeedback
+    human: EvaluatorFeedback
+
+
 class EvaluationResponse(BaseModel):
     input_type: str
     scores: EvaluationScores
@@ -844,3 +855,55 @@ class EvaluationResponse(BaseModel):
     final_score: float
     confidence: float
     explanation: List[str]
+    feedback: EvaluationFeedback
+
+
+# ---------- Code Evaluation Models ----------
+
+
+class CodeEvaluationRequest(BaseModel):
+    source_code: Optional[str] = None     # Direct code input
+    user_id: Optional[int] = None         # For fetching from saved draft
+    question_id: int                      # Required — determines test cases
+    language: str = "python"              # Language to execute
+
+
+class CodeTestCaseResult(BaseModel):
+    test_case_id: int
+    input: str
+    expected_output: str
+    actual_output: Optional[str] = None
+    passed: bool
+    status: str       # PASSED | WRONG_ANSWER | RUNTIME_ERROR | TLE | MLE | COMPILE_ERROR
+    error: Optional[str] = None
+    execution_time_ms: float
+
+
+class CodeEvaluationResponse(BaseModel):
+    evaluation_id: int
+    score: int                            # 0-10
+    passed_testcases: int
+    total_testcases: int
+    status: str                           # SUCCESS | PARTIAL | FAILED
+    errors: List[str]
+    results: List[CodeTestCaseResult]
+    execution_time: str
+    submitted_at: str
+
+
+class CreateTestCaseRequest(BaseModel):
+    question_id: int
+    input: str
+    expected_output: str
+    is_hidden: bool = False
+    position: int = 0
+
+
+class TestCaseResponse(BaseModel):
+    id: int
+    question_id: int
+    input: str
+    expected_output: str
+    is_hidden: bool
+    position: int
+

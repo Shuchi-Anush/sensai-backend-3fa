@@ -61,6 +61,8 @@ integrations_table_name = "integrations"
 bq_sync_table_name = "bq_sync"
 assignment_table_name = "assignment"
 evaluations_table_name = "evaluations"
+code_test_cases_table_name = "code_test_cases"
+code_evaluations_table_name = "code_evaluations"
 
 UPLOAD_FOLDER_NAME = "uploads"
 

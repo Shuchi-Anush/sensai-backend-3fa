@@ -17,6 +17,7 @@ async def create_evaluation(
     final_score: float,
     confidence: float,
     explanation: list[str],
+    feedback: dict | None = None,
 ) -> int:
     """Store an evaluation result and return its ID."""
     async with get_new_db_connection() as conn:
@@ -25,8 +26,8 @@ async def create_evaluation(
             f"""INSERT INTO {evaluations_table_name}
                 (input_type, input_data, auto_score, ai_score, human_score,
                  auto_weight, ai_weight, human_weight, conflict,
-                 final_score, confidence, explanation)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                 final_score, confidence, explanation, feedback)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 input_type,
                 input_data,
@@ -40,6 +41,7 @@ async def create_evaluation(
                 final_score,
                 confidence,
                 json.dumps(explanation),
+                json.dumps(feedback) if feedback else None,
             ),
         )
         await conn.commit()
@@ -55,7 +57,7 @@ async def get_evaluations(limit: int = 20, offset: int = 0) -> list[dict]:
         await cursor.execute(
             f"""SELECT id, input_type, input_data, auto_score, ai_score, human_score,
                        auto_weight, ai_weight, human_weight, conflict,
-                       final_score, confidence, explanation, created_at
+                       final_score, confidence, explanation, feedback, created_at
                 FROM {evaluations_table_name}
                 WHERE deleted_at IS NULL
                 ORDER BY created_at DESC
@@ -68,6 +70,8 @@ async def get_evaluations(limit: int = 20, offset: int = 0) -> list[dict]:
         for row in rows:
             item = dict(zip(columns, row))
             item["explanation"] = json.loads(item["explanation"])
+            if item.get("feedback"):
+                item["feedback"] = json.loads(item["feedback"])
             results.append(item)
         return results
 
@@ -79,7 +83,7 @@ async def get_evaluation_by_id(evaluation_id: int) -> dict | None:
         await cursor.execute(
             f"""SELECT id, input_type, input_data, auto_score, ai_score, human_score,
                        auto_weight, ai_weight, human_weight, conflict,
-                       final_score, confidence, explanation, created_at
+                       final_score, confidence, explanation, feedback, created_at
                 FROM {evaluations_table_name}
                 WHERE id = ? AND deleted_at IS NULL""",
             (evaluation_id,),
@@ -90,4 +94,6 @@ async def get_evaluation_by_id(evaluation_id: int) -> dict | None:
         columns = [desc[0] for desc in cursor.description]
         item = dict(zip(columns, row))
         item["explanation"] = json.loads(item["explanation"])
+        if item.get("feedback"):
+            item["feedback"] = json.loads(item["feedback"])
         return item
