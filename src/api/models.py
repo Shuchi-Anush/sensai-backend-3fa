@@ -822,6 +822,8 @@ class EvaluationInputType(str, Enum):
 
 class EvaluationRequest(BaseModel):
     input_data: str
+    question_id: Optional[str] = None  # "binary_search" | "fibonacci" | "palindrome"
+    language: str = "python"  # "python" | "javascript" | "java" | "cpp"
 
 
 class EvaluationScores(BaseModel):

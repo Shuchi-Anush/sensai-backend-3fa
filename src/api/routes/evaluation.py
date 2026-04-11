@@ -37,6 +37,190 @@ from api.utils.logging import logger
 
 router = APIRouter()
 
+# ---------- Fixed Questions for Code Autograding ----------
+
+FIXED_QUESTIONS: dict[str, dict] = {
+    "binary_search": {
+        "id": "binary_search",
+        "title": "Binary Search",
+        "description": (
+            "Given a sorted integer array and a target value, find the 0-based index "
+            "of the target using binary search. Print -1 if the target is not found."
+        ),
+        "input_format": "Line 1: space-separated sorted integers\nLine 2: target integer",
+        "output_format": "Index of target (0-based), or -1 if not found",
+        "templates": {
+            "python": (
+                "arr = list(map(int, input().split()))\n"
+                "target = int(input())\n\n"
+                "def binary_search(arr, target):\n"
+                "    # Write your implementation here\n"
+                "    pass\n\n"
+                "print(binary_search(arr, target))"
+            ),
+            "javascript": (
+                "const lines = require('fs').readFileSync(0, 'utf8').trim().split('\\n');\n"
+                "const arr = lines[0].trim().split(' ').map(Number);\n"
+                "const target = Number(lines[1].trim());\n\n"
+                "function binarySearch(arr, target) {\n"
+                "    // Write your implementation here\n"
+                "}\n\n"
+                "console.log(binarySearch(arr, target));"
+            ),
+            "java": (
+                "import java.util.Scanner;\n\n"
+                "public class Solution {\n"
+                "    static int binarySearch(int[] arr, int target) {\n"
+                "        // Write your implementation here\n"
+                "        return -1;\n"
+                "    }\n\n"
+                "    public static void main(String[] args) {\n"
+                "        Scanner sc = new Scanner(System.in);\n"
+                "        String[] parts = sc.nextLine().trim().split(\"\\\\s+\");\n"
+                "        int[] arr = new int[parts.length];\n"
+                "        for (int i = 0; i < parts.length; i++) arr[i] = Integer.parseInt(parts[i]);\n"
+                "        int target = Integer.parseInt(sc.nextLine().trim());\n"
+                "        System.out.println(binarySearch(arr, target));\n"
+                "    }\n"
+                "}"
+            ),
+            "cpp": (
+                "#include <iostream>\n"
+                "#include <vector>\n"
+                "#include <sstream>\n"
+                "using namespace std;\n\n"
+                "int binarySearch(vector<int>& arr, int target) {\n"
+                "    // Write your implementation here\n"
+                "    return -1;\n"
+                "}\n\n"
+                "int main() {\n"
+                "    string line;\n"
+                "    getline(cin, line);\n"
+                "    istringstream iss(line);\n"
+                "    vector<int> arr;\n"
+                "    int x;\n"
+                "    while (iss >> x) arr.push_back(x);\n"
+                "    int target;\n"
+                "    cin >> target;\n"
+                "    cout << binarySearch(arr, target) << endl;\n"
+                "    return 0;\n"
+                "}"
+            ),
+        },
+        "test_cases": [
+            {"id": 1, "input": "1 3 5 7 9\n5", "expected_output": "2"},
+            {"id": 2, "input": "2 4 6 8 10\n1", "expected_output": "-1"},
+            {"id": 3, "input": "1\n1", "expected_output": "0"},
+            {"id": 4, "input": "1 2 3 4 5\n5", "expected_output": "4"},
+            {"id": 5, "input": "10 20 30 40 50\n30", "expected_output": "2"},
+        ],
+    },
+    "fibonacci": {
+        "id": "fibonacci",
+        "title": "Fibonacci Series",
+        "description": (
+            "Given N, print the first N Fibonacci numbers (F(0)=0, F(1)=1, F(2)=1, ...) "
+            "separated by spaces on a single line."
+        ),
+        "input_format": "Single integer N (1 ≤ N ≤ 50)",
+        "output_format": "First N Fibonacci numbers separated by spaces",
+        "templates": {
+            "python": (
+                "n = int(input())\n\n"
+                "# Print first n Fibonacci numbers separated by spaces\n"
+                "# F(0)=0, F(1)=1, F(2)=1, F(3)=2, ...\n"
+            ),
+            "javascript": (
+                "const n = parseInt(require('fs').readFileSync(0, 'utf8').trim());\n\n"
+                "// Print first n Fibonacci numbers separated by spaces\n"
+                "// F(0)=0, F(1)=1, F(2)=1, F(3)=2, ...\n"
+            ),
+            "java": (
+                "import java.util.Scanner;\n\n"
+                "public class Solution {\n"
+                "    public static void main(String[] args) {\n"
+                "        Scanner sc = new Scanner(System.in);\n"
+                "        int n = Integer.parseInt(sc.nextLine().trim());\n"
+                "        // Print first n Fibonacci numbers separated by spaces\n"
+                "        // F(0)=0, F(1)=1, F(2)=1, F(3)=2, ...\n"
+                "    }\n"
+                "}"
+            ),
+            "cpp": (
+                "#include <iostream>\n"
+                "using namespace std;\n\n"
+                "int main() {\n"
+                "    int n;\n"
+                "    cin >> n;\n"
+                "    // Print first n Fibonacci numbers separated by spaces\n"
+                "    // F(0)=0, F(1)=1, F(2)=1, F(3)=2, ...\n"
+                "    return 0;\n"
+                "}"
+            ),
+        },
+        "test_cases": [
+            {"id": 1, "input": "1", "expected_output": "0"},
+            {"id": 2, "input": "5", "expected_output": "0 1 1 2 3"},
+            {"id": 3, "input": "8", "expected_output": "0 1 1 2 3 5 8 13"},
+            {"id": 4, "input": "2", "expected_output": "0 1"},
+            {"id": 5, "input": "10", "expected_output": "0 1 1 2 3 5 8 13 21 34"},
+        ],
+    },
+    "palindrome": {
+        "id": "palindrome",
+        "title": "Reverse Palindrome",
+        "description": (
+            "Given a string, check if it reads the same forwards and backwards "
+            "(i.e., is a palindrome). Print 'Yes' if it is, 'No' otherwise."
+        ),
+        "input_format": "A single string (no spaces)",
+        "output_format": "'Yes' if palindrome, 'No' otherwise",
+        "templates": {
+            "python": (
+                "s = input()\n\n"
+                "# Check if s is a palindrome\n"
+                "# Print 'Yes' or 'No'\n"
+            ),
+            "javascript": (
+                "const s = require('fs').readFileSync(0, 'utf8').trim();\n\n"
+                "// Check if s is a palindrome\n"
+                "// Print 'Yes' or 'No'\n"
+            ),
+            "java": (
+                "import java.util.Scanner;\n\n"
+                "public class Solution {\n"
+                "    public static void main(String[] args) {\n"
+                "        Scanner sc = new Scanner(System.in);\n"
+                "        String s = sc.nextLine().trim();\n"
+                "        // Check if s is a palindrome\n"
+                "        // Print 'Yes' or 'No'\n"
+                "    }\n"
+                "}"
+            ),
+            "cpp": (
+                "#include <iostream>\n"
+                "#include <string>\n"
+                "#include <algorithm>\n"
+                "using namespace std;\n\n"
+                "int main() {\n"
+                "    string s;\n"
+                "    cin >> s;\n"
+                "    // Check if s is a palindrome\n"
+                "    // Print 'Yes' or 'No'\n"
+                "    return 0;\n"
+                "}"
+            ),
+        },
+        "test_cases": [
+            {"id": 1, "input": "racecar", "expected_output": "Yes"},
+            {"id": 2, "input": "hello", "expected_output": "No"},
+            {"id": 3, "input": "madam", "expected_output": "Yes"},
+            {"id": 4, "input": "abcba", "expected_output": "Yes"},
+            {"id": 5, "input": "python", "expected_output": "No"},
+        ],
+    },
+}
+
 
 # ---------- LLM Response Models ----------
 
@@ -239,6 +423,85 @@ async def step3_score(
     return a, ai, h, feedback
 
 
+async def step3_score_code(
+    input_data: str, question_id: str, features: str, language: str = "python"
+) -> tuple[float, float, float, dict, list[dict]]:
+    """Step 3 for code mode: test execution for auto, LLM for AI + Human in parallel."""
+    model = openai_plan_to_model_name["text"]
+    test_cases = FIXED_QUESTIONS[question_id]["test_cases"]
+    q_title = FIXED_QUESTIONS[question_id]["title"]
+
+    ai_messages = compile_prompt(
+        AI_SCORE_SYSTEM_PROMPT,
+        AI_SCORE_USER_PROMPT,
+        input_type="code",
+        input_data=input_data,
+        features=features,
+    )
+    human_messages = compile_prompt(
+        HUMAN_SCORE_SYSTEM_PROMPT,
+        HUMAN_SCORE_USER_PROMPT,
+        input_type="code",
+        input_data=input_data,
+        features=features,
+    )
+
+    # Run test execution + AI + Human in parallel
+    test_task = execute_test_cases(input_data, language, test_cases)
+    ai_task = run_llm_with_openai(
+        model=model, messages=ai_messages, response_model=ScoreOutput, max_output_tokens=1024
+    )
+    human_task = run_llm_with_openai(
+        model=model, messages=human_messages, response_model=ScoreOutput, max_output_tokens=1024
+    )
+
+    test_results, ai_result, human_result = await asyncio.gather(test_task, ai_task, human_task)
+
+    # Auto score from test execution
+    passed = sum(1 for r in test_results if r.passed)
+    total = len(test_results)
+    auto_score = round(passed / total, 4) if total > 0 else 0.0
+    auto_issues = [
+        f"Test {r.test_case_id} {r.status}" + (f": {r.error}" if r.error else "")
+        for r in test_results
+        if not r.passed
+    ]
+
+    feedback = {
+        "auto": {
+            "verdict": f"{passed}/{total} test cases passed on '{q_title}'",
+            "issues": auto_issues,
+        },
+        "ai": {"verdict": ai_result.verdict, "issues": ai_result.issues},
+        "human": {"verdict": human_result.verdict, "issues": human_result.issues},
+    }
+
+    tc_results_data = [
+        {
+            "test_case_id": r.test_case_id,
+            "input": r.input,
+            "expected_output": r.expected_output,
+            "actual_output": r.actual_output,
+            "passed": r.passed,
+            "status": r.status,
+            "error": r.error,
+        }
+        for r in test_results
+    ]
+
+    logger.info(
+        f"MMEE Step 3 (code) — auto={auto_score:.2f} ({passed}/{total} tests), "
+        f"ai={ai_result.score:.2f}, human={human_result.score:.2f}"
+    )
+    return (
+        auto_score,
+        max(0.0, min(1.0, ai_result.score)),
+        max(0.0, min(1.0, human_result.score)),
+        feedback,
+        tc_results_data,
+    )
+
+
 def step4_conflict(a: float, ai: float, h: float) -> float:
     """Step 4: Compute disagreement between evaluators."""
     conflict = max(a, ai, h) - min(a, ai, h)
@@ -342,17 +605,44 @@ def build_explanation(
 # ---------- API Endpoints ----------
 
 
+@router.get("/questions")
+async def get_fixed_questions():
+    """Return the list of fixed coding questions for the MMEE autograder."""
+    return [
+        {
+            "id": q["id"],
+            "title": q["title"],
+            "description": q["description"],
+            "input_format": q["input_format"],
+            "output_format": q["output_format"],
+            "templates": q["templates"],
+            "test_cases": [
+                {"id": tc["id"], "input": tc["input"], "expected_output": tc["expected_output"]}
+                for tc in q["test_cases"]
+            ],
+        }
+        for q in FIXED_QUESTIONS.values()
+    ]
+
+
 @router.post("")
 async def evaluate_input(request: EvaluationRequest):
     """Main MMEE evaluation endpoint — runs the full 8-step pipeline."""
     input_data = request.input_data.strip()
+    question_id = request.question_id
+    language = request.language or "python"
+    use_fixed_question = question_id and question_id in FIXED_QUESTIONS
+
     if not input_data:
         raise HTTPException(status_code=400, detail="input_data cannot be empty")
 
     async def stream_response() -> AsyncGenerator[str, None]:
-        # Step 1: Classify
+        # Step 1: Classify (or use "code" if a fixed question is selected)
         yield json.dumps({"step": 1, "status": "classifying"}) + "\n"
-        input_type = await step1_classify_input(input_data)
+        if use_fixed_question:
+            input_type = "code"
+        else:
+            input_type = await step1_classify_input(input_data)
         yield json.dumps({"step": 1, "result": input_type}) + "\n"
 
         # Step 2: Extract features
@@ -360,14 +650,23 @@ async def evaluate_input(request: EvaluationRequest):
         features = await step2_extract_features(input_data, input_type)
         yield json.dumps({"step": 2, "result": "done"}) + "\n"
 
-        # Step 3: Score (three parallel evaluators) — now returns feedback
+        # Step 3: Score
         yield json.dumps({"step": 3, "status": "scoring"}) + "\n"
-        a, ai_score, h, feedback = await step3_score(
-            input_data, input_type, features
-        )
-        yield json.dumps(
-            {"step": 3, "result": {"auto": a, "ai": ai_score, "human": h}}
-        ) + "\n"
+        test_results_data: list[dict] | None = None
+
+        if use_fixed_question:
+            # Test execution for auto, LLM for AI + Human in parallel
+            a, ai_score, h, feedback, test_results_data = await step3_score_code(
+                input_data, question_id, features, language  # type: ignore[arg-type]
+            )
+        else:
+            a, ai_score, h, feedback = await step3_score(input_data, input_type, features)
+
+        step3_result: dict = {"auto": a, "ai": ai_score, "human": h}
+        if test_results_data is not None:
+            step3_result["test_results"] = test_results_data
+
+        yield json.dumps({"step": 3, "result": step3_result}) + "\n"
 
         # Steps 4-7: Compute final result
         conflict = step4_conflict(a, ai_score, h)

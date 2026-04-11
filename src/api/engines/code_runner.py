@@ -1,17 +1,23 @@
 """
-CodeRunner — Sandboxed Python code execution via subprocess.
+CodeRunner — Sandboxed code execution via subprocess.
 
-Executes user code with stdin, captures stdout/stderr, enforces
-timeout (TLE) and basic resource limits.
+Supports: Python, JavaScript (Node.js), Java, C++.
+
+Uses run_in_executor + blocking subprocess.run so it works on all
+platforms including Windows (SelectorEventLoop does not support
+asyncio.create_subprocess_exec).
 """
 
 import asyncio
-import time
 import os
-import tempfile
+import shutil
+import subprocess
 import sys
-from dataclasses import dataclass, field
+import tempfile
+import time
+from dataclasses import dataclass
 from enum import Enum
+
 from api.utils.logging import logger
 
 
@@ -21,6 +27,7 @@ class RunStatus(str, Enum):
     RUNTIME_ERROR = "RUNTIME_ERROR"
     TLE = "TLE"
     MLE = "MLE"
+    UNSUPPORTED = "UNSUPPORTED"
 
 
 @dataclass
@@ -32,117 +39,272 @@ class CodeRunResult:
     status: RunStatus = RunStatus.SUCCESS
 
 
-# Maximum output size (256KB) to prevent memory bombs
+# Maximum output size (256 KB)
 MAX_OUTPUT_BYTES = 256 * 1024
-# Default timeout in seconds
 DEFAULT_TIMEOUT_SECONDS = 5
-# Maximum memory in bytes (128MB)
-MAX_MEMORY_BYTES = 128 * 1024 * 1024
 
 
-async def run_python_code(
-    source_code: str,
-    stdin_data: str = "",
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
-) -> CodeRunResult:
-    """
-    Execute Python code in a sandboxed subprocess.
+# ---------- shared subprocess helper ----------
 
-    1. Writes source to a temp file
-    2. Runs via `python <tempfile>` with stdin piped
-    3. Enforces timeout (TLE)
-    4. Captures stdout, stderr, exit code
-    5. Cleans up temp file
-    """
+def _exec(cmd: list[str], stdin_data: str, timeout: float, cwd: str | None = None) -> tuple[str, str, int, float]:
+    """Run a command, return (stdout, stderr, returncode, elapsed_ms)."""
+    start = time.perf_counter()
+    proc = subprocess.run(
+        cmd,
+        input=stdin_data.encode("utf-8"),
+        capture_output=True,
+        timeout=timeout,
+        cwd=cwd,
+    )
+    elapsed = (time.perf_counter() - start) * 1000
+    stdout = proc.stdout[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace").strip()
+    stderr = proc.stderr[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace").strip()
+    return stdout, stderr, proc.returncode, elapsed
+
+
+# ---------- language runners (all synchronous) ----------
+
+def _run_python(source_code: str, stdin_data: str, timeout: float) -> CodeRunResult:
     result = CodeRunResult()
     tmp_path = None
-
     try:
-        # Write code to a temporary file
-        with tempfile.NamedTemporaryFile(
-            mode="w",
-            suffix=".py",
-            delete=False,
-            encoding="utf-8",
-        ) as tmp:
-            tmp.write(source_code)
-            tmp_path = tmp.name
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+            f.write(source_code)
+            tmp_path = f.name
 
-        # First, check for syntax errors via py_compile
-        compile_check = await asyncio.create_subprocess_exec(
-            sys.executable, "-m", "py_compile", tmp_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+        # Syntax check
+        cc = subprocess.run(
+            [sys.executable, "-m", "py_compile", tmp_path],
+            capture_output=True, timeout=10,
         )
-        _, compile_stderr = await asyncio.wait_for(
-            compile_check.communicate(), timeout=10
-        )
-
-        if compile_check.returncode != 0:
+        if cc.returncode != 0:
             result.status = RunStatus.COMPILE_ERROR
-            result.stderr = compile_stderr.decode("utf-8", errors="replace").strip()
-            result.exit_code = compile_check.returncode
+            result.stderr = cc.stderr.decode("utf-8", errors="replace").strip()
             return result
-
-        # Execute the code
-        start_time = time.perf_counter()
-
-        process = await asyncio.create_subprocess_exec(
-            sys.executable, tmp_path,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
 
         try:
-            stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(input=stdin_data.encode("utf-8")),
-                timeout=timeout_seconds,
-            )
-        except asyncio.TimeoutError:
-            # Kill the process on timeout
-            try:
-                process.kill()
-                await process.wait()
-            except ProcessLookupError:
-                pass
-            elapsed = (time.perf_counter() - start_time) * 1000
+            stdout, stderr, rc, elapsed = _exec([sys.executable, tmp_path], stdin_data, timeout)
+        except subprocess.TimeoutExpired:
             result.status = RunStatus.TLE
-            result.execution_time_ms = round(elapsed, 2)
-            result.stderr = f"Time Limit Exceeded ({timeout_seconds}s)"
-            result.exit_code = -1
+            result.stderr = f"Time Limit Exceeded ({timeout}s)"
             return result
 
-        elapsed = (time.perf_counter() - start_time) * 1000
+        result.stdout = stdout
+        result.stderr = stderr or None
+        result.exit_code = rc
         result.execution_time_ms = round(elapsed, 2)
-
-        # Truncate oversized output
-        stdout_text = stdout_bytes[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-        stderr_text = stderr_bytes[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-
-        result.stdout = stdout_text.strip()
-        result.stderr = stderr_text.strip() if stderr_text.strip() else None
-        result.exit_code = process.returncode
-
-        # Check for memory-related errors
-        if result.stderr and "MemoryError" in result.stderr:
+        if "MemoryError" in (stderr or ""):
             result.status = RunStatus.MLE
-        elif process.returncode != 0:
+        elif rc != 0:
             result.status = RunStatus.RUNTIME_ERROR
         else:
             result.status = RunStatus.SUCCESS
-
     except Exception as e:
-        logger.error(f"CodeRunner unexpected error: {e}")
+        logger.error(f"CodeRunner[python] error: {e}")
         result.status = RunStatus.RUNTIME_ERROR
         result.stderr = str(e)
-        result.exit_code = -1
     finally:
-        # Clean up temp file
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.remove(tmp_path)
             except OSError:
                 pass
-
     return result
+
+
+def _run_javascript(source_code: str, stdin_data: str, timeout: float) -> CodeRunResult:
+    result = CodeRunResult()
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".js", delete=False, encoding="utf-8") as f:
+            f.write(source_code)
+            tmp_path = f.name
+
+        try:
+            stdout, stderr, rc, elapsed = _exec(["node", tmp_path], stdin_data, timeout)
+        except subprocess.TimeoutExpired:
+            result.status = RunStatus.TLE
+            result.stderr = f"Time Limit Exceeded ({timeout}s)"
+            return result
+        except FileNotFoundError:
+            result.status = RunStatus.RUNTIME_ERROR
+            result.stderr = "Node.js not found. Please install Node.js to run JavaScript."
+            return result
+
+        result.stdout = stdout
+        result.stderr = stderr or None
+        result.exit_code = rc
+        result.execution_time_ms = round(elapsed, 2)
+        result.status = RunStatus.RUNTIME_ERROR if rc != 0 else RunStatus.SUCCESS
+    except Exception as e:
+        logger.error(f"CodeRunner[javascript] error: {e}")
+        result.status = RunStatus.RUNTIME_ERROR
+        result.stderr = str(e)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+    return result
+
+
+def _run_java(source_code: str, stdin_data: str, timeout: float) -> CodeRunResult:
+    """Java: saves as Solution.java, compiles with javac, runs with java."""
+    result = CodeRunResult()
+    tmp_dir = None
+    try:
+        tmp_dir = tempfile.mkdtemp()
+        java_file = os.path.join(tmp_dir, "Solution.java")
+        with open(java_file, "w", encoding="utf-8") as f:
+            f.write(source_code)
+
+        # Compile
+        try:
+            cc = subprocess.run(
+                ["javac", java_file],
+                capture_output=True, timeout=30, cwd=tmp_dir,
+            )
+        except FileNotFoundError:
+            result.status = RunStatus.RUNTIME_ERROR
+            result.stderr = "javac not found. Please install JDK to run Java."
+            return result
+
+        if cc.returncode != 0:
+            result.status = RunStatus.COMPILE_ERROR
+            result.stderr = cc.stderr.decode("utf-8", errors="replace").strip()
+            return result
+
+        # Run
+        try:
+            stdout, stderr, rc, elapsed = _exec(
+                ["java", "-cp", tmp_dir, "Solution"], stdin_data, timeout
+            )
+        except subprocess.TimeoutExpired:
+            result.status = RunStatus.TLE
+            result.stderr = f"Time Limit Exceeded ({timeout}s)"
+            return result
+        except FileNotFoundError:
+            result.status = RunStatus.RUNTIME_ERROR
+            result.stderr = "java not found. Please install JRE/JDK to run Java."
+            return result
+
+        result.stdout = stdout
+        result.stderr = stderr or None
+        result.exit_code = rc
+        result.execution_time_ms = round(elapsed, 2)
+        result.status = RunStatus.RUNTIME_ERROR if rc != 0 else RunStatus.SUCCESS
+    except Exception as e:
+        logger.error(f"CodeRunner[java] error: {e}")
+        result.status = RunStatus.RUNTIME_ERROR
+        result.stderr = str(e)
+    finally:
+        if tmp_dir and os.path.exists(tmp_dir):
+            try:
+                shutil.rmtree(tmp_dir)
+            except OSError:
+                pass
+    return result
+
+
+def _run_cpp(source_code: str, stdin_data: str, timeout: float) -> CodeRunResult:
+    result = CodeRunResult()
+    tmp_src = None
+    tmp_exe = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".cpp", delete=False, encoding="utf-8") as f:
+            f.write(source_code)
+            tmp_src = f.name
+
+        tmp_exe = tmp_src.replace(".cpp", (".exe" if os.name == "nt" else ".out"))
+
+        # Compile
+        try:
+            cc = subprocess.run(
+                ["g++", "-o", tmp_exe, tmp_src, "-std=c++17"],
+                capture_output=True, timeout=30,
+            )
+        except FileNotFoundError:
+            result.status = RunStatus.RUNTIME_ERROR
+            result.stderr = "g++ not found. Please install GCC/MinGW to run C++."
+            return result
+
+        if cc.returncode != 0:
+            result.status = RunStatus.COMPILE_ERROR
+            result.stderr = cc.stderr.decode("utf-8", errors="replace").strip()
+            return result
+
+        # Run
+        try:
+            stdout, stderr, rc, elapsed = _exec([tmp_exe], stdin_data, timeout)
+        except subprocess.TimeoutExpired:
+            result.status = RunStatus.TLE
+            result.stderr = f"Time Limit Exceeded ({timeout}s)"
+            return result
+
+        result.stdout = stdout
+        result.stderr = stderr or None
+        result.exit_code = rc
+        result.execution_time_ms = round(elapsed, 2)
+        result.status = RunStatus.RUNTIME_ERROR if rc != 0 else RunStatus.SUCCESS
+    except Exception as e:
+        logger.error(f"CodeRunner[cpp] error: {e}")
+        result.status = RunStatus.RUNTIME_ERROR
+        result.stderr = str(e)
+    finally:
+        for p in [tmp_src, tmp_exe]:
+            if p and os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+    return result
+
+
+# ---------- dispatcher ----------
+
+_RUNNERS = {
+    "python": _run_python,
+    "javascript": _run_javascript,
+    "java": _run_java,
+    "cpp": _run_cpp,
+}
+
+
+def _run_code_sync(
+    source_code: str,
+    language: str,
+    stdin_data: str,
+    timeout: float,
+) -> CodeRunResult:
+    runner = _RUNNERS.get(language.lower())
+    if runner is None:
+        r = CodeRunResult()
+        r.status = RunStatus.UNSUPPORTED
+        r.stderr = f"Language '{language}' is not supported. Supported: python, javascript, java, cpp."
+        return r
+    return runner(source_code, stdin_data, timeout)
+
+
+# ---------- public async API ----------
+
+async def run_code(
+    source_code: str,
+    language: str = "python",
+    stdin_data: str = "",
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+) -> CodeRunResult:
+    """Execute code in a thread-pool (non-blocking). Supports python, javascript, java, cpp."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(
+        None, _run_code_sync, source_code, language, stdin_data, timeout_seconds
+    )
+
+
+# Backward-compat alias used by older call sites
+async def run_python_code(
+    source_code: str,
+    stdin_data: str = "",
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+) -> CodeRunResult:
+    return await run_code(source_code, "python", stdin_data, timeout_seconds)

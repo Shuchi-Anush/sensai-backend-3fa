@@ -1,13 +1,14 @@
 """
 TestCaseExecutor — Runs source code against a list of test cases.
 
-For each test case, calls CodeRunner with stdin = test_case.input,
-then compares stdout with test_case.expected_output.
+Supports: python, javascript, java, cpp.
 """
 
 from dataclasses import dataclass
-from api.engines.code_runner import run_python_code, RunStatus
+from api.engines.code_runner import run_code, RunStatus
 from api.utils.logging import logger
+
+SUPPORTED_LANGUAGES = {"python", "javascript", "java", "cpp"}
 
 
 @dataclass
@@ -31,22 +32,19 @@ async def execute_test_cases(
     """
     Execute source_code against each test case and return results.
 
-    Each test_case dict should have:
-      - id: int
-      - input: str
-      - expected_output: str
+    Each test_case dict must have: id (int), input (str), expected_output (str).
+    language: "python" | "javascript" | "java" | "cpp"
     """
     results: list[TestCaseResult] = []
 
-    if language != "python":
-        # For now, only Python is supported
+    if language.lower() not in SUPPORTED_LANGUAGES:
         for tc in test_cases:
             results.append(TestCaseResult(
                 test_case_id=tc["id"],
                 input=tc["input"],
                 expected_output=tc["expected_output"],
                 status="UNSUPPORTED_LANGUAGE",
-                error=f"Language '{language}' is not yet supported. Only Python is available.",
+                error=f"Language '{language}' is not supported. Choose from: {', '.join(sorted(SUPPORTED_LANGUAGES))}.",
             ))
         return results
 
@@ -58,8 +56,9 @@ async def execute_test_cases(
         )
 
         try:
-            run_result = await run_python_code(
+            run_result = await run_code(
                 source_code=source_code,
+                language=language,
                 stdin_data=tc["input"],
                 timeout_seconds=timeout_per_case,
             )
@@ -78,17 +77,15 @@ async def execute_test_cases(
                 tc_result.status = "MLE"
                 tc_result.error = run_result.stderr
                 tc_result.passed = False
-            elif run_result.status == RunStatus.RUNTIME_ERROR:
-                tc_result.status = "RUNTIME_ERROR"
+            elif run_result.status in (RunStatus.RUNTIME_ERROR, RunStatus.UNSUPPORTED):
+                tc_result.status = run_result.status.value
                 tc_result.error = run_result.stderr
                 tc_result.actual_output = run_result.stdout
                 tc_result.passed = False
             else:
-                # Compare outputs (strip whitespace for leniency)
                 actual = (run_result.stdout or "").strip()
                 expected = tc["expected_output"].strip()
                 tc_result.actual_output = actual
-
                 if actual == expected:
                     tc_result.status = "PASSED"
                     tc_result.passed = True
@@ -104,13 +101,13 @@ async def execute_test_cases(
 
         results.append(tc_result)
 
-        # If compile error on first test case, skip the rest (same code won't compile again)
+        # If compile error on first case, skip the rest (same code won't compile)
         if tc_result.status == "COMPILE_ERROR":
-            for remaining_tc in test_cases[test_cases.index(tc) + 1:]:
+            for remaining in test_cases[test_cases.index(tc) + 1:]:
                 results.append(TestCaseResult(
-                    test_case_id=remaining_tc["id"],
-                    input=remaining_tc["input"],
-                    expected_output=remaining_tc["expected_output"],
+                    test_case_id=remaining["id"],
+                    input=remaining["input"],
+                    expected_output=remaining["expected_output"],
                     status="COMPILE_ERROR",
                     error=tc_result.error,
                     passed=False,
@@ -118,6 +115,6 @@ async def execute_test_cases(
             break
 
     logger.info(
-        f"TestCaseExecutor — {sum(1 for r in results if r.passed)}/{len(results)} passed"
+        f"TestCaseExecutor [{language}] — {sum(1 for r in results if r.passed)}/{len(results)} passed"
     )
     return results
